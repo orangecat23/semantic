@@ -1,0 +1,1587 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "colab": {
+      "provenance": [],
+      "gpuType": "T4"
+    },
+    "kernelspec": {
+      "name": "python3",
+      "display_name": "Python 3"
+    },
+    "language_info": {
+      "name": "python"
+    },
+    "accelerator": "GPU"
+   
+  },
+  "cells": [
+    {
+      "cell_type": "code",
+      "execution_count": 7,
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "U-ufyNN7vQ92",
+        "outputId": "6379e43d-8753-4605-918b-9d7ebc3bacff"
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "torch: 2.8.0+cu126   GPU available: True\n"
+          ]
+        }
+      ],
+      "source": [
+        "# Installing dependencies\n",
+        "\n",
+        "!pip install -q transformers datasets evaluate gradio accelerate sentencepiece\n",
+        "\n",
+        "\n",
+        "# GPU check\n",
+        "import torch\n",
+        "print(\"torch:\", torch.__version__, \"  GPU available:\", torch.cuda.is_available())\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from google.colab import drive\n",
+        "drive.mount('/content/drive')"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "hHMDCqLS6kik",
+        "outputId": "b634b9fb-a714-4489-b757-142e84d19b17"
+      },
+      "execution_count": 8,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Drive already mounted at /content/drive; to attempt to forcibly remount, call drive.mount(\"/content/drive\", force_remount=True).\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Imports & global variables\n",
+        "\n",
+        "import os\n",
+        "import json\n",
+        "import math\n",
+        "import random\n",
+        "from pathlib import Path\n",
+        "from typing import List, Dict, Tuple\n",
+        "\n",
+        "import torch\n",
+        "from datasets import load_dataset, Dataset, DatasetDict\n",
+        "from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, DataCollatorForSeq2Seq, TrainingArguments, Trainer\n",
+        "import evaluate\n",
+        "import numpy as np\n",
+        "\n",
+        "# Choose model_name: t5-small for training from scratch; you can use a pretrained T5 fine-tuned model for better inference\n",
+        "MODEL_NAME = \"t5-small\"   # change to a fine-tuned model if you want e.g., \"tscholak/t5-small-spider\" for inference experiments\n",
+        "DEVICE = \"cuda\" if torch.cuda.is_available() else \"cpu\"\n",
+        "\n",
+        "print(\"Device:\", DEVICE)\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 529
+        },
+        "id": "OBkMc8Wy6WMa",
+        "outputId": "0682173b-403b-4ba2-b3b1-00c56d99af39"
+      },
+      "execution_count": 9,
+      "outputs": [
+        {
+          "output_type": "error",
+          "ename": "ImportError",
+          "evalue": "cannot import name 'GenerationMixin' from 'transformers.generation' (/usr/local/lib/python3.12/dist-packages/transformers/generation/__init__.py)",
+          "traceback": [
+            "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+            "\u001b[0;31mImportError\u001b[0m                               Traceback (most recent call last)",
+            "\u001b[0;32m/tmp/ipython-input-2848772739.py\u001b[0m in \u001b[0;36m<cell line: 0>\u001b[0;34m()\u001b[0m\n\u001b[1;32m     10\u001b[0m \u001b[0;32mimport\u001b[0m \u001b[0mtorch\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     11\u001b[0m \u001b[0;32mfrom\u001b[0m \u001b[0mdatasets\u001b[0m \u001b[0;32mimport\u001b[0m \u001b[0mload_dataset\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mDataset\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mDatasetDict\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 12\u001b[0;31m \u001b[0;32mfrom\u001b[0m \u001b[0mtransformers\u001b[0m \u001b[0;32mimport\u001b[0m \u001b[0mAutoTokenizer\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mAutoModelForSeq2SeqLM\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mDataCollatorForSeq2Seq\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mTrainingArguments\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mTrainer\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     13\u001b[0m \u001b[0;32mimport\u001b[0m \u001b[0mevaluate\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     14\u001b[0m \u001b[0;32mimport\u001b[0m \u001b[0mnumpy\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0mnp\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.12/dist-packages/transformers/utils/import_utils.py\u001b[0m in \u001b[0;36m__getattr__\u001b[0;34m(self, name)\u001b[0m\n\u001b[1;32m   2315\u001b[0m         \u001b[0;32melif\u001b[0m \u001b[0mname\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_class_to_module\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   2316\u001b[0m             \u001b[0;32mtry\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m-> 2317\u001b[0;31m                 \u001b[0mmodule\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_get_module\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_class_to_module\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0mname\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m   2318\u001b[0m                 \u001b[0mvalue\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mgetattr\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mmodule\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mname\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   2319\u001b[0m             \u001b[0;32mexcept\u001b[0m \u001b[0;34m(\u001b[0m\u001b[0mModuleNotFoundError\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mRuntimeError\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0me\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.12/dist-packages/transformers/utils/import_utils.py\u001b[0m in \u001b[0;36m_get_module\u001b[0;34m(self, module_name)\u001b[0m\n\u001b[1;32m   2345\u001b[0m             \u001b[0;32mreturn\u001b[0m \u001b[0mimportlib\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mimport_module\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m\".\"\u001b[0m \u001b[0;34m+\u001b[0m \u001b[0mmodule_name\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m__name__\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   2346\u001b[0m         \u001b[0;32mexcept\u001b[0m \u001b[0mException\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0me\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m-> 2347\u001b[0;31m             \u001b[0;32mraise\u001b[0m \u001b[0me\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m   2348\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   2349\u001b[0m     \u001b[0;32mdef\u001b[0m \u001b[0m__reduce__\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.12/dist-packages/transformers/utils/import_utils.py\u001b[0m in \u001b[0;36m_get_module\u001b[0;34m(self, module_name)\u001b[0m\n\u001b[1;32m   2343\u001b[0m     \u001b[0;32mdef\u001b[0m \u001b[0m_get_module\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mmodule_name\u001b[0m\u001b[0;34m:\u001b[0m \u001b[0mstr\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   2344\u001b[0m         \u001b[0;32mtry\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m-> 2345\u001b[0;31m             \u001b[0;32mreturn\u001b[0m \u001b[0mimportlib\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mimport_module\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m\".\"\u001b[0m \u001b[0;34m+\u001b[0m \u001b[0mmodule_name\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m__name__\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m   2346\u001b[0m         \u001b[0;32mexcept\u001b[0m \u001b[0mException\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0me\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   2347\u001b[0m             \u001b[0;32mraise\u001b[0m \u001b[0me\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/lib/python3.12/importlib/__init__.py\u001b[0m in \u001b[0;36mimport_module\u001b[0;34m(name, package)\u001b[0m\n\u001b[1;32m     88\u001b[0m                 \u001b[0;32mbreak\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     89\u001b[0m             \u001b[0mlevel\u001b[0m \u001b[0;34m+=\u001b[0m \u001b[0;36m1\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 90\u001b[0;31m     \u001b[0;32mreturn\u001b[0m \u001b[0m_bootstrap\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_gcd_import\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mname\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0mlevel\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mpackage\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mlevel\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     91\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     92\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.12/dist-packages/transformers/models/auto/tokenization_auto.py\u001b[0m in \u001b[0;36m<module>\u001b[0;34m\u001b[0m\n\u001b[1;32m     38\u001b[0m )\n\u001b[1;32m     39\u001b[0m \u001b[0;32mfrom\u001b[0m \u001b[0;34m.\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mencoder_decoder\u001b[0m \u001b[0;32mimport\u001b[0m \u001b[0mEncoderDecoderConfig\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 40\u001b[0;31m \u001b[0;32mfrom\u001b[0m \u001b[0;34m.\u001b[0m\u001b[0mauto_factory\u001b[0m \u001b[0;32mimport\u001b[0m \u001b[0m_LazyAutoMapping\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     41\u001b[0m from .configuration_auto import (\n\u001b[1;32m     42\u001b[0m     \u001b[0mCONFIG_MAPPING_NAMES\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.12/dist-packages/transformers/models/auto/auto_factory.py\u001b[0m in \u001b[0;36m<module>\u001b[0;34m\u001b[0m\n\u001b[1;32m     41\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     42\u001b[0m \u001b[0;32mif\u001b[0m \u001b[0mis_torch_available\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 43\u001b[0;31m     \u001b[0;32mfrom\u001b[0m \u001b[0;34m...\u001b[0m\u001b[0mgeneration\u001b[0m \u001b[0;32mimport\u001b[0m \u001b[0mGenerationMixin\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     44\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     45\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;31mImportError\u001b[0m: cannot import name 'GenerationMixin' from 'transformers.generation' (/usr/local/lib/python3.12/dist-packages/transformers/generation/__init__.py)",
+            "",
+            "\u001b[0;31m---------------------------------------------------------------------------\u001b[0;32m\nNOTE: If your import is failing due to a missing package, you can\nmanually install dependencies using either !pip or !apt.\n\nTo view examples of installing some common dependencies, click the\n\"Open Examples\" button below.\n\u001b[0;31m---------------------------------------------------------------------------\u001b[0m\n"
+          ],
+          "errorDetails": {
+            "actions": [
+              {
+                "action": "open_url",
+                "actionText": "Open Examples",
+                "url": "/notebooks/snippets/importing_libraries.ipynb"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Load WikiSQL dataset\n",
+        "\n",
+        "from datasets import load_dataset\n",
+        "\n",
+        "# Load directly from the official dataset repo on Hugging Face\n",
+        "raw = load_dataset(\"b-mc2/sql-create-context\")\n",
+        "\n",
+        "print(raw)\n",
+        "print(\"Example keys in train[0]:\")\n",
+        "example = raw[\"train\"][0]\n",
+        "for k in example.keys():\n",
+        "    print(\" -\", k)\n",
+        "print(\"\\nSample example (truncated):\")\n",
+        "print({k: example[k] for k in list(example.keys())[:6]})\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 463,
+          "referenced_widgets": [
+            "202af7391f954580b98dc58c526d6451",
+            "72b76eb34d09473cae643b972d6f06ca",
+            "7520b84a8e3b4fd4b7253f99c7e1e45a",
+            "9224017cb506491da13f51ae2eadd97f",
+            "6bee4e0ea3a94477a3343a4a4ee702f0",
+            "6765358af0ee47e087b96faa1b58b1e8",
+            "5dd5aa3f7b294a10af111a1f9a90f82b",
+            "be00db9b80a84bd987eeaacd3ddb9026",
+            "87eb10222f1544978c42b620b30f07d4",
+            "9ecfdeaed50d47419f2df8b39fc72566",
+            "729c9dcd8b224c5daf87574b8aef46b2",
+            "5b81f0d229dc405d8bc1f0e506a55e8b",
+            "581aa665501748b1ae98642923ed93ba",
+            "0fe1c51a4bf6498e85f8803311eb0756",
+            "2a3aa4cc84194ce397116d5ddb755dc1",
+            "07f45bb04d5b4bc585849ae769102de2",
+            "0dc317dd631c4a7c90bed8abc17b1cb1",
+            "112b3b39435a45f3a1fd98174ac9bde8",
+            "cb3fc1365fb24ca3958e08cd070f7457",
+            "09150fb99473477880cf78ed578ea9bd",
+            "fea76e7d01e340b388709153ffe10f02",
+            "8bbf63597be94d85a5fbdc5e8cd95f4f",
+            "c2d1f1c4c81e4c6c8ca9d90c3600e603",
+            "8ea39e84ae06460da0f735d51cd5624c",
+            "62303d6471474d71b2d0889aafa37a2a",
+            "60cd3dd8b06843689b33560a35f957ed",
+            "34b1e08034ce4d56812ee9ab32aa4860",
+            "afbe711ba25340958c0dce2b1a972925",
+            "3ba384ef1ef44c7798572fa530881271",
+            "3ca411c4f3944c7c81b496edcb6dfb1b",
+            "b2f8ca322dcf4990953b55e98fe02e9e",
+            "b9f564b858bc4d989ff4a0e4d6ddbf97",
+            "55ff64ee9b9045f3ab959778ab12210f"
+          ]
+        },
+        "id": "lSK9qsA36Ysu",
+        "outputId": "8c63afe5-1c19-4839-d374-aaa33c32b2e7"
+      },
+      "execution_count": 10,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "/usr/local/lib/python3.12/dist-packages/huggingface_hub/utils/_auth.py:94: UserWarning: \n",
+            "The secret `HF_TOKEN` does not exist in your Colab secrets.\n",
+            "To authenticate with the Hugging Face Hub, create a token in your settings tab (https://huggingface.co/settings/tokens), set it as secret in your Google Colab and restart your session.\n",
+            "You will be able to reuse this secret in all of your notebooks.\n",
+            "Please note that authentication is recommended but still optional to access public models or datasets.\n",
+            "  warnings.warn(\n"
+          ]
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "README.md: 0.00B [00:00, ?B/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "202af7391f954580b98dc58c526d6451"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "sql_create_context_v4.json:   0%|          | 0.00/21.8M [00:00<?, ?B/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "5b81f0d229dc405d8bc1f0e506a55e8b"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "Generating train split:   0%|          | 0/78577 [00:00<?, ? examples/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "c2d1f1c4c81e4c6c8ca9d90c3600e603"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "DatasetDict({\n",
+            "    train: Dataset({\n",
+            "        features: ['answer', 'question', 'context'],\n",
+            "        num_rows: 78577\n",
+            "    })\n",
+            "})\n",
+            "Example keys in train[0]:\n",
+            " - answer\n",
+            " - question\n",
+            " - context\n",
+            "\n",
+            "Sample example (truncated):\n",
+            "{'answer': 'SELECT COUNT(*) FROM head WHERE age > 56', 'question': 'How many heads of the departments are older than 56 ?', 'context': 'CREATE TABLE head (age INTEGER)'}\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# normalize dataset fields into (question, sql, table_cols, table_rows)\n",
+        "\n",
+        "# WikiSQL entry formats vary; we create a safe extractor.\n",
+        "def extract_wikisql_example(ex):\n",
+        "    \"\"\"\n",
+        "    Return a dict with: question (str), sql (str), table_columns (List[str]), table_rows (List[List[str]])\n",
+        "    Some datasets store table info separately; we try many fallbacks.\n",
+        "    \"\"\"\n",
+        "    q = ex.get(\"question\") or ex.get(\"Question\") or ex.get(\"text\") or \"\"\n",
+        "    # SQL extraction: try common locations\n",
+        "    sql = \"\"\n",
+        "    # Some loaders provide 'sql' as dict with 'human_readable' or 'query'\n",
+        "    if \"sql\" in ex and isinstance(ex[\"sql\"], dict):\n",
+        "        sql = ex[\"sql\"].get(\"human_readable\") or ex[\"sql\"].get(\"query\") or ex[\"sql\"].get(\"humanReadable\") or \"\"\n",
+        "    # fallback keys\n",
+        "    sql = sql or ex.get(\"query\") or ex.get(\"sql_query\") or \"\"\n",
+        "    # Table columns — try a few shapes\n",
+        "    cols = []\n",
+        "    rows = []\n",
+        "    if \"table\" in ex and isinstance(ex[\"table\"], dict):\n",
+        "        cols = ex[\"table\"].get(\"header\", []) or ex[\"table\"].get(\"column_names\", []) or []\n",
+        "        rows = ex[\"table\"].get(\"rows\", []) or []\n",
+        "    # sometimes 'table_id' present and tables stored separately in dataset metadata; try to find in dataset\n",
+        "    # We'll attempt to find the table info by table_id if present and dataset includes \"tables\"\n",
+        "    if (not cols) and \"table_id\" in ex and \"tables\" in raw:\n",
+        "        tid = ex[\"table_id\"]\n",
+        "        try:\n",
+        "            titem = [t for t in raw[\"tables\"] if t.get(\"id\") == tid]\n",
+        "            if titem:\n",
+        "                t = titem[0]\n",
+        "                cols = t.get(\"header\") or t.get(\"column_names\") or []\n",
+        "                rows = t.get(\"rows\") or []\n",
+        "        except Exception:\n",
+        "            pass\n",
+        "    # final fallback: try any 'columns' key\n",
+        "    if not cols:\n",
+        "        for k in [\"columns\", \"column_names\", \"header\", \"table_headers\", \"schema\"]:\n",
+        "            if k in ex:\n",
+        "                cols = ex[k]\n",
+        "                break\n",
+        "    return {\"question\": q, \"sql\": sql, \"table_columns\": cols, \"table_rows\": rows}\n",
+        "\n",
+        "# Quick test on first few examples\n",
+        "for i in range(3):\n",
+        "    e = raw[\"train\"][i]\n",
+        "    print(i, extract_wikisql_example(e))"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "EDsZU3nj7ENF",
+        "outputId": "cc893576-015a-42e1-b4e9-b3241fe0bf36"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "0 {'question': 'How many heads of the departments are older than 56 ?', 'sql': '', 'table_columns': [], 'table_rows': []}\n",
+            "1 {'question': 'List the name, born state and age of the heads of departments ordered by age.', 'sql': '', 'table_columns': [], 'table_rows': []}\n",
+            "2 {'question': 'List the creation year, name and budget of each department.', 'sql': '', 'table_columns': [], 'table_rows': []}\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "\n",
+        "#  b-mc2/sql-create-context\n",
+        "\n",
+        "from datasets import Dataset\n",
+        "import random\n",
+        "\n",
+        "MAX_TRAIN = 5000\n",
+        "MAX_VAL = 1000\n",
+        "MAX_TEST = 1000\n",
+        "\n",
+        "def extract_sql_example(ex):\n",
+        "    return {\n",
+        "        \"question\": ex[\"question\"],\n",
+        "        \"sql\": ex[\"answer\"],          # ✅ actual SQL query\n",
+        "        \"table_columns\": ex[\"context\"],  # ✅ table schema\n",
+        "        \"table_rows\": []\n",
+        "    }\n",
+        "\n",
+        "def build_simple_dataset(max_examples=2000, seed=42):\n",
+        "    ds = raw[\"train\"]\n",
+        "    rng = random.Random(seed)\n",
+        "    idxs = list(range(len(ds)))\n",
+        "    rng.shuffle(idxs)\n",
+        "    examples = []\n",
+        "    for i in idxs[:max_examples]:\n",
+        "        ex = extract_sql_example(ds[i])\n",
+        "        if not ex[\"question\"].strip() or not ex[\"sql\"].strip():\n",
+        "            continue\n",
+        "        examples.append(ex)\n",
+        "    return Dataset.from_list(examples)\n",
+        "\n",
+        "print(\"Building small datasets (this may take a few seconds)...\")\n",
+        "\n",
+        "# Split manually\n",
+        "full_ds = build_simple_dataset(max_examples=MAX_TRAIN + MAX_VAL + MAX_TEST, seed=1)\n",
+        "train_ds = full_ds.select(range(0, min(MAX_TRAIN, len(full_ds))))\n",
+        "val_ds = full_ds.select(range(MAX_TRAIN, min(MAX_TRAIN + MAX_VAL, len(full_ds))))\n",
+        "test_ds = full_ds.select(range(MAX_TRAIN + MAX_VAL, min(MAX_TRAIN + MAX_VAL + MAX_TEST, len(full_ds))))\n",
+        "\n",
+        "print(f\"Train size: {len(train_ds)}, Val size: {len(val_ds)}, Test size: {len(test_ds)}\")\n",
+        "if len(train_ds) > 0:\n",
+        "    print(\"\\nSample item:\\n\", train_ds[0])\n",
+        "else:\n",
+        "    print(\"⚠️ Still empty — check field mapping again.\")\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "5ODG_QbB7G42",
+        "outputId": "0f4aa75a-30ca-4566-b137-f925906bf3f9"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Building small datasets (this may take a few seconds)...\n",
+            "Train size: 5000, Val size: 1000, Test size: 1000\n",
+            "\n",
+            "Sample item:\n",
+            " {'question': \"Who was Silva's Partner in the match with a Score of 6–3, 7–6 (7–3)?\", 'sql': 'SELECT partner FROM table_name_64 WHERE score = \"6–3, 7–6 (7–3)\"', 'table_columns': 'CREATE TABLE table_name_64 (partner VARCHAR, score VARCHAR)', 'table_rows': []}\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "\n",
+        "# Tokenization for T5 model\n",
+        "\n",
+        "from transformers import T5Tokenizer\n",
+        "\n",
+        "# Load T5 tokenizer\n",
+        "tokenizer = T5Tokenizer.from_pretrained(\"t5-small\")\n",
+        "\n",
+        "# Function to prepare text pairs\n",
+        "def preprocess_function(examples):\n",
+        "    inputs = []\n",
+        "    targets = []\n",
+        "    for q, schema, sql in zip(examples[\"question\"], examples[\"table_columns\"], examples[\"sql\"]):\n",
+        "        input_text = f\"translate English to SQL: {q} | {schema}\"\n",
+        "        inputs.append(input_text)\n",
+        "        targets.append(sql)\n",
+        "    model_inputs = tokenizer(inputs, max_length=256, truncation=True, padding=\"max_length\")\n",
+        "    labels = tokenizer(targets, max_length=256, truncation=True, padding=\"max_length\").input_ids\n",
+        "    model_inputs[\"labels\"] = labels\n",
+        "    return model_inputs\n",
+        "\n",
+        "# Tokenize datasets\n",
+        "tokenized_train = train_ds.map(preprocess_function, batched=True, remove_columns=train_ds.column_names)\n",
+        "tokenized_val = val_ds.map(preprocess_function, batched=True, remove_columns=val_ds.column_names)\n",
+        "\n",
+        "print(\"Tokenization complete!\")\n",
+        "print(\"Example input_ids length:\", len(tokenized_train[0]['input_ids']))\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 249,
+          "referenced_widgets": [
+            "bedb3f938cc14f7e81775c1290e71c0b",
+            "e0a5b3a9964a4de5b3cdb36dee38f77e",
+            "b2e3df2418eb4f1f80c32414538daabf",
+            "a59d5da03a104d5088aaef8e8a3c9d57",
+            "8a66d03eea42428f92ec636da63fb184",
+            "46b4f3d879634032a9cb031120b3e070",
+            "44106bfa02f54c59b6b2f587a9847443",
+            "577aa5eefbdc4be9b08e9015814dbd60",
+            "72b68e07aa484c9786bd46ecf31f15c1",
+            "94302203eae14ee6b592d51e0cb967ce",
+            "f09174910f2248ccb9407ebb5f167dc6",
+            "70cea0df3e7e48fbbfdb6af8b59ffdf5",
+            "1c0d623cd44347719bcced3ba5bf2bcd",
+            "d33b5922a67846698ea42eb4d184a63a",
+            "03ec48db548c4f22b6347166f58285b6",
+            "32d12db67e1a4b44a56998c2aa55070f",
+            "8bc2327a3b5b4955a24d747cb177379b",
+            "093eeeb6aa37486eb8bcb49394831526",
+            "82b2e153ea1d44f28fedc5b8437f708d",
+            "e17af78856504a58b78bb47c8110b381",
+            "e0cbb6be07854f929359dc159c879a83",
+            "78e67f0cede64ba58351da4f2219bf7f",
+            "6f63b35391f94701947bade4668c1e1f",
+            "f4b7a3f855074065bee7a0267bd2f426",
+            "3a31df97038f40d8bb70a187c32f1760",
+            "c22e118bf9bc40eba0ecf2c7671d6bcf",
+            "6ea0cf01907541dfba7bc837bcb20694",
+            "c499e1e906774466847b680a8c90da03",
+            "bddabd678d584500a2109b5c9fba99d2",
+            "8636d4292190464f926cee22fad6c639",
+            "6c492553e19b41069057e80e7b38d2c3",
+            "7fbb57c30a4c41a49bea395fcb1b89b2",
+            "c74023136f1449338709e58f6a497da8",
+            "b34f14d08c174f109a2e4bf0ea8258f3",
+            "88636bbe39524e06b9a917eb1777110b",
+            "a352d389fcdb4f6c97b2dee1ded6013c",
+            "de9dfa1f0ab14ea2bc3201b7a655f0d0",
+            "90941d3b1b5343169d60020f5fb06321",
+            "b297dbb696244b80a8714645a2d21781",
+            "8a33b55554bb46e79f45aca90f3603b7",
+            "e94d9cdc67cb4e268177138bbbc8c401",
+            "38db2a4bb1184142861acf5d54b63c8d",
+            "3349a75ec8c547d28ead0ceaed270b65",
+            "8f5c20d79bdf4537bba08a15040a894e",
+            "777ddadb6b3743ed822ad09962420d0a",
+            "e2f3e2564dde4c61940c8bf6eab7351a",
+            "d62bc513affd41edba56fb90e33b97ae",
+            "6f9fa46d13d94d5d8cf306a596613f1a",
+            "f51771e5aaa7427b80f52f383f7df249",
+            "e694c357af1f4b0e8b70014ec41741f4",
+            "c851140f6f254311b1fd6b86884b61c3",
+            "d5d9a2013b3c4cf2b51ee2e7426a4d12",
+            "348708a94a0a49fbbf5883e62bd5546a",
+            "35fca55a70344fa9920e94ec99ca48de",
+            "155593c8a0894c8e8e582ca1996344de"
+          ]
+        },
+        "id": "iN3EpQPu7Jbm",
+        "outputId": "a8f2afde-e39b-4ed0-a15e-cd47f4ac599d"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "tokenizer_config.json:   0%|          | 0.00/2.32k [00:00<?, ?B/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "bedb3f938cc14f7e81775c1290e71c0b"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "spiece.model:   0%|          | 0.00/792k [00:00<?, ?B/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "70cea0df3e7e48fbbfdb6af8b59ffdf5"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "tokenizer.json:   0%|          | 0.00/1.39M [00:00<?, ?B/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "6f63b35391f94701947bade4668c1e1f"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "You are using the default legacy behaviour of the <class 'transformers.models.t5.tokenization_t5.T5Tokenizer'>. This is expected, and simply means that the `legacy` (previous) behavior will be used so nothing changes for you. If you want to use the new behaviour, set `legacy=False`. This should only be set if you understand what it means, and thoroughly read the reason why this was added as explained in https://github.com/huggingface/transformers/pull/24565\n"
+          ]
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "Map:   0%|          | 0/5000 [00:00<?, ? examples/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "b34f14d08c174f109a2e4bf0ea8258f3"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "Map:   0%|          | 0/1000 [00:00<?, ? examples/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "777ddadb6b3743ed822ad09962420d0a"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Tokenization complete!\n",
+            "Example input_ids length: 256\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "\n",
+        "from transformers import T5ForConditionalGeneration, Trainer, TrainingArguments\n",
+        "\n",
+        "model = T5ForConditionalGeneration.from_pretrained(\"t5-small\")\n",
+        "\n",
+        "training_args = TrainingArguments(\n",
+        "    output_dir=\"./results_text2sql\",\n",
+        "    do_eval=True,                # instead of evaluation_strategy\n",
+        "    learning_rate=3e-4,\n",
+        "    per_device_train_batch_size=8,\n",
+        "    per_device_eval_batch_size=8,\n",
+        "    num_train_epochs=2,\n",
+        "    weight_decay=0.01,\n",
+        "    save_total_limit=2,\n",
+        "    logging_dir=\"./logs\",\n",
+        "    logging_steps=100\n",
+        ")\n",
+        "\n",
+        "trainer = Trainer(\n",
+        "    model=model,\n",
+        "    args=training_args,\n",
+        "    train_dataset=tokenized_train,\n",
+        "    eval_dataset=tokenized_val\n",
+        ")\n",
+        "\n",
+        "print(\"✅ Training setup complete!\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 130,
+          "referenced_widgets": [
+            "2f33268d5d9d4845bfea35a71927fed5",
+            "ff87dd1393c04695b9dfc6c7a6bee9e9",
+            "2e4b6e0504a54121b89ee0a68fd0a7c6",
+            "2a096163a24f4601b1edb1018ccdeb58",
+            "0a01a7c90bfd4d8e89ef3fbc3e029e31",
+            "7dfbbf2fd10e4fa39e7c8c8ccfea534c",
+            "9d3054c8297d41a5ba9e90131db1a8f6",
+            "86ad14ccb2ec471db76291f6dda48d23",
+            "fc6fff90eedb43d2882e5bcf2581e760",
+            "6920e2fc8ee94efbb8bfd6c26075e17a",
+            "5cd7564db18944c7ad71f3c415854096",
+            "2c02b64a2e524a50b859814460f0059e",
+            "9cb72753d7af4bc891ad57637134f271",
+            "6b94370087d74f0891c9f5d36fcbbc6c",
+            "859793b5f5434d5092adce4ea75765ce",
+            "eb8229e47a08466583aa21d459f30949",
+            "7504113084e0466594d4dad24816e0f3",
+            "45214e582a184c0cbda9fadbbea24145",
+            "ac97e93379544e1593ebb1d22ba85498",
+            "0f0a9fc8187d4a6f990835ca08ee2994",
+            "1b8249362c1f4e5aa0483a9bc3168df9",
+            "043584a2cccd4fb2afa3bbbec66844dc",
+            "867f68469b6e4445bc1491cb5eca1bbb",
+            "4f3d3a2ea76d41f2b2af6e1baed37fd9",
+            "63a7e46e4b8e49e3b845444a2616bf2b",
+            "1ac8bfe889654bf7afdd4bf38d2af24a",
+            "1bd0f089d51a468a8f8e7d6bb4ee7188",
+            "aca9fd410e9f4802b321c755f227fd87",
+            "bbe88451b585442984cd872e22a0ae86",
+            "083c364e3a1849e3a0f0f037a74f5051",
+            "5d14f7e19d734b63a3f5b2b91f0f635c",
+            "e2cd1e66f13d4a969b48b0d5a87805c7",
+            "7da434d70fb74d498cb8132a08f52048"
+          ]
+        },
+        "id": "eRQzJqko7MAQ",
+        "outputId": "5bf0553d-0e73-47ac-dd0d-11300edb1ecd"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "config.json:   0%|          | 0.00/1.21k [00:00<?, ?B/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "2f33268d5d9d4845bfea35a71927fed5"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "model.safetensors:   0%|          | 0.00/242M [00:00<?, ?B/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "2c02b64a2e524a50b859814460f0059e"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "generation_config.json:   0%|          | 0.00/147 [00:00<?, ?B/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "867f68469b6e4445bc1491cb5eca1bbb"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "✅ Training setup complete!\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "\n",
+        "#  Model training\n",
+        "\n",
+        "trainer.train()\n",
+        "print(\"✅ Training complete!\")\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 766
+        },
+        "id": "OwcaCg6H7gbJ",
+        "outputId": "ee1625bc-4778-481d-905e-da94dda63d1c"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "/usr/local/lib/python3.12/dist-packages/notebook/notebookapp.py:191: SyntaxWarning: invalid escape sequence '\\/'\n",
+            "  | |_| | '_ \\/ _` / _` |  _/ -_)\n"
+          ]
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<IPython.core.display.Javascript object>"
+            ],
+            "application/javascript": [
+              "\n",
+              "        window._wandbApiKey = new Promise((resolve, reject) => {\n",
+              "            function loadScript(url) {\n",
+              "            return new Promise(function(resolve, reject) {\n",
+              "                let newScript = document.createElement(\"script\");\n",
+              "                newScript.onerror = reject;\n",
+              "                newScript.onload = resolve;\n",
+              "                document.body.appendChild(newScript);\n",
+              "                newScript.src = url;\n",
+              "            });\n",
+              "            }\n",
+              "            loadScript(\"https://cdn.jsdelivr.net/npm/postmate/build/postmate.min.js\").then(() => {\n",
+              "            const iframe = document.createElement('iframe')\n",
+              "            iframe.style.cssText = \"width:0;height:0;border:none\"\n",
+              "            document.body.appendChild(iframe)\n",
+              "            const handshake = new Postmate({\n",
+              "                container: iframe,\n",
+              "                url: 'https://wandb.ai/authorize'\n",
+              "            });\n",
+              "            const timeout = setTimeout(() => reject(\"Couldn't auto authenticate\"), 5000)\n",
+              "            handshake.then(function(child) {\n",
+              "                child.on('authorize', data => {\n",
+              "                    clearTimeout(timeout)\n",
+              "                    resolve(data)\n",
+              "                });\n",
+              "            });\n",
+              "            })\n",
+              "        });\n",
+              "    "
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "\u001b[34m\u001b[1mwandb\u001b[0m: Logging into wandb.ai. (Learn how to deploy a W&B server locally: https://wandb.me/wandb-server)\n",
+            "\u001b[34m\u001b[1mwandb\u001b[0m: You can find your API key in your browser here: https://wandb.ai/authorize?ref=models\n",
+            "wandb: Paste an API key from your profile and hit enter:"
+          ]
+        },
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            " ··········\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "\u001b[34m\u001b[1mwandb\u001b[0m: \u001b[33mWARNING\u001b[0m If you're specifying your api key in code, ensure this code is not shared publicly.\n",
+            "\u001b[34m\u001b[1mwandb\u001b[0m: \u001b[33mWARNING\u001b[0m Consider setting the WANDB_API_KEY environment variable, or running `wandb login` from the command line.\n",
+            "\u001b[34m\u001b[1mwandb\u001b[0m: No netrc file found, creating one.\n",
+            "\u001b[34m\u001b[1mwandb\u001b[0m: Appending key for api.wandb.ai to your netrc file: /root/.netrc\n",
+            "\u001b[34m\u001b[1mwandb\u001b[0m: Currently logged in as: \u001b[33mtanayaramgir\u001b[0m (\u001b[33mtanayaramgir-pccoe\u001b[0m) to \u001b[32mhttps://api.wandb.ai\u001b[0m. Use \u001b[1m`wandb login --relogin`\u001b[0m to force relogin\n"
+          ]
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<IPython.core.display.HTML object>"
+            ],
+            "text/html": []
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<IPython.core.display.HTML object>"
+            ],
+            "text/html": [
+              "Tracking run with wandb version 0.22.2"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<IPython.core.display.HTML object>"
+            ],
+            "text/html": [
+              "Run data is saved locally in <code>/content/wandb/run-20251029_030945-imksxeom</code>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<IPython.core.display.HTML object>"
+            ],
+            "text/html": [
+              "Syncing run <strong><a href='https://wandb.ai/tanayaramgir-pccoe/huggingface/runs/imksxeom' target=\"_blank\">light-spaceship-14</a></strong> to <a href='https://wandb.ai/tanayaramgir-pccoe/huggingface' target=\"_blank\">Weights & Biases</a> (<a href='https://wandb.me/developer-guide' target=\"_blank\">docs</a>)<br>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<IPython.core.display.HTML object>"
+            ],
+            "text/html": [
+              " View project at <a href='https://wandb.ai/tanayaramgir-pccoe/huggingface' target=\"_blank\">https://wandb.ai/tanayaramgir-pccoe/huggingface</a>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<IPython.core.display.HTML object>"
+            ],
+            "text/html": [
+              " View run at <a href='https://wandb.ai/tanayaramgir-pccoe/huggingface/runs/imksxeom' target=\"_blank\">https://wandb.ai/tanayaramgir-pccoe/huggingface/runs/imksxeom</a>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<IPython.core.display.HTML object>"
+            ],
+            "text/html": [
+              "\n",
+              "    <div>\n",
+              "      \n",
+              "      <progress value='1250' max='1250' style='width:300px; height:20px; vertical-align: middle;'></progress>\n",
+              "      [1250/1250 06:52, Epoch 2/2]\n",
+              "    </div>\n",
+              "    <table border=\"1\" class=\"dataframe\">\n",
+              "  <thead>\n",
+              " <tr style=\"text-align: left;\">\n",
+              "      <th>Step</th>\n",
+              "      <th>Training Loss</th>\n",
+              "    </tr>\n",
+              "  </thead>\n",
+              "  <tbody>\n",
+              "    <tr>\n",
+              "      <td>100</td>\n",
+              "      <td>0.576600</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <td>200</td>\n",
+              "      <td>0.064800</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <td>300</td>\n",
+              "      <td>0.054900</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <td>400</td>\n",
+              "      <td>0.044100</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <td>500</td>\n",
+              "      <td>0.041600</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <td>600</td>\n",
+              "      <td>0.040100</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <td>700</td>\n",
+              "      <td>0.033600</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <td>800</td>\n",
+              "      <td>0.032500</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <td>900</td>\n",
+              "      <td>0.033000</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <td>1000</td>\n",
+              "      <td>0.029400</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <td>1100</td>\n",
+              "      <td>0.029000</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <td>1200</td>\n",
+              "      <td>0.028300</td>\n",
+              "    </tr>\n",
+              "  </tbody>\n",
+              "</table><p>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "✅ Training complete!\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "model.save_pretrained(\"/content/drive/MyDrive/t5_text2sql_model\")\n",
+        "tokenizer.save_pretrained(\"/content/drive/MyDrive/t5_text2sql_model\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "CVNc8S3Z8Ga-",
+        "outputId": "f3e2827c-9749-4f77-8140-a57195a5a5ff"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "('/content/drive/MyDrive/t5_text2sql_model/tokenizer_config.json',\n",
+              " '/content/drive/MyDrive/t5_text2sql_model/special_tokens_map.json',\n",
+              " '/content/drive/MyDrive/t5_text2sql_model/spiece.model',\n",
+              " '/content/drive/MyDrive/t5_text2sql_model/added_tokens.json')"
+            ]
+          },
+          "metadata": {},
+          "execution_count": 11
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [],
+      "metadata": {
+        "id": "tAVt8_nAvj_Y"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "\n",
+        "# ✅ Enhanced Evaluation Block — Accuracy, F1, BLEU\n",
+        "\n",
+        "import evaluate\n",
+        "from sklearn.metrics import f1_score\n",
+        "import torch\n",
+        "import numpy as np\n",
+        "\n",
+        "# Load metrics\n",
+        "accuracy_metric = evaluate.load(\"accuracy\")\n",
+        "bleu_metric = evaluate.load(\"bleu\")\n",
+        "\n",
+        "# Define compute_metrics function\n",
+        "def compute_metrics(eval_pred):\n",
+        "    predictions, labels = eval_pred\n",
+        "    decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)\n",
+        "    decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)\n",
+        "\n",
+        "    # Clean and normalize text\n",
+        "    decoded_preds = [p.strip().lower() for p in decoded_preds]\n",
+        "    decoded_labels = [l.strip().lower() for l in decoded_labels]\n",
+        "\n",
+        "    # Accuracy (exact match)\n",
+        "    accuracy = sum(p == l for p, l in zip(decoded_preds, decoded_labels)) / len(decoded_preds)\n",
+        "\n",
+        "    # Token-level F1\n",
+        "    f1_scores = []\n",
+        "    for p, l in zip(decoded_preds, decoded_labels):\n",
+        "        p_tokens, l_tokens = p.split(), l.split()\n",
+        "        common = len(set(p_tokens) & set(l_tokens))\n",
+        "        precision = common / len(p_tokens) if p_tokens else 0\n",
+        "        recall = common / len(l_tokens) if l_tokens else 0\n",
+        "        f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0\n",
+        "        f1_scores.append(f1)\n",
+        "    avg_f1 = np.mean(f1_scores)\n",
+        "\n",
+        "    # BLEU score\n",
+        "    bleu = bleu_metric.compute(predictions=decoded_preds,\n",
+        "                               references=[[l] for l in decoded_labels])[\"bleu\"]\n",
+        "\n",
+        "    return {\n",
+        "        \"accuracy\": accuracy,\n",
+        "        \"f1\": avg_f1,\n",
+        "        \"bleu\": bleu\n",
+        "    }\n",
+        "\n",
+        "# ✅ Device setup\n",
+        "device = torch.device(\"cuda\" if torch.cuda.is_available() else \"cpu\")\n",
+        "model.to(device)\n",
+        "\n",
+        "# ✅ Manual Evaluation on a Few Samples\n",
+        "print(\"\\n🔍 Manual Evaluation on Validation Samples:\\n\")\n",
+        "samples = val_ds.select(range(min(5, len(val_ds))))\n",
+        "for s in samples:\n",
+        "    input_text = f\"translate English to SQL: {s['question']} | {s.get('table_columns', '')}\"\n",
+        "    inputs = tokenizer(input_text, return_tensors=\"pt\", truncation=True).to(device)\n",
+        "\n",
+        "    outputs = model.generate(**inputs, max_length=256)\n",
+        "    pred_sql = tokenizer.decode(outputs[0], skip_special_tokens=True)\n",
+        "\n",
+        "    print(\"Question:\", s[\"question\"])\n",
+        "    print(\"Generated SQL:\", pred_sql)\n",
+        "    print(\"Actual SQL:\", s[\"sql\"])\n",
+        "    print(\"-\" * 80)\n",
+        "\n",
+        "# ✅ Compute global metrics on the entire validation set\n",
+        "print(\"\\n📊 Computing overall evaluation metrics...\\n\")\n",
+        "\n",
+        "def generate_predictions(model, tokenizer, dataset):\n",
+        "    preds, labels = [], []\n",
+        "    for s in dataset:\n",
+        "        input_text = f\"translate English to SQL: {s['question']} | {s.get('table_columns', '')}\"\n",
+        "        inputs = tokenizer(input_text, return_tensors=\"pt\", truncation=True).to(device)\n",
+        "        outputs = model.generate(**inputs, max_length=256)\n",
+        "        preds.append(tokenizer.decode(outputs[0], skip_special_tokens=True))\n",
+        "        labels.append(s[\"sql\"])\n",
+        "    return preds, labels\n",
+        "\n",
+        "preds, labels = generate_predictions(model, tokenizer, val_ds)\n",
+        "eval_pred = (tokenizer(preds, return_tensors=\"pt\", padding=True).input_ids,\n",
+        "             tokenizer(labels, return_tensors=\"pt\", padding=True).input_ids)\n",
+        "\n",
+        "metrics = compute_metrics(eval_pred)\n",
+        "print(f\"✅ Evaluation Metrics:\\nAccuracy: {metrics['accuracy']:.4f}\\nF1 Score: {metrics['f1']:.4f}\\nBLEU: {metrics['bleu']:.4f}\")\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 654,
+          "referenced_widgets": [
+            "176bf0f2fd874582871d660556c99ad3",
+            "bc9e2abad37349ed8915480d45ee9fd6",
+            "2bbbb72a44ba43c68ace58c8c03aad81",
+            "51579c6bab4f4fc78ef2c2a9a818dacb",
+            "45c4c709c45146549a801ca20cfb9e79",
+            "9e258963bd7341488d73f678561952bb",
+            "e6d744cd48ff48abb8e9bc7ede1e7a69",
+            "ed8b7c0e5047485a9c5a4aa1fa52d7eb",
+            "f1b64000f6354bf2a8e4fb6da09013f5",
+            "d6c7ca647da74b87b45f25b6e9bec416",
+            "a81e8a976109447985af718b7184d01a",
+            "f41e12b53ffc49aba88240d51a08faae",
+            "d0b6da0b34894e9d805a8a3675e5cf20",
+            "783c988d95244f8b9293a1e2c5d8fb20",
+            "f6d1ee7acc184d9db43b7594e63a3441",
+            "ce5a499b075340be9fe08478c8edb61c",
+            "cba17ba4f9da4d69a6ad782ac12c6b52",
+            "6158a6554ba2486eac8adf458efa90a2",
+            "7e96abd0b0df4205859f090a1e175ca2",
+            "13d01ee8caec47368b559e79b7a4a3b8",
+            "1adac9ab11bc40f2852349c046fc2dfe",
+            "7831e038f6bb49738e7a1de8b9fe5a4f",
+            "66d6dc37fc5a4d29b9181c5552f4bfbb",
+            "14fac56d12ed43408ff60ada469f272e",
+            "5fc22802a76d4a1b892fdcb47307b7c2",
+            "43c186e56a6d481d970dcaafd246f984",
+            "5e32fa12257f4311bcf5c14f30deccb5",
+            "da802e8879b6431fa91de59aa53303d2",
+            "a7cfec59f4944de595637686b3b894bf",
+            "07ee739eb7874b3e9cf57b4c84baeea7",
+            "c3295b6d90854eaeb2b8086ae119fb33",
+            "d6c40a60b1944e52ba46c635618d80c6",
+            "57361ececaac49469817302eb8d56628"
+          ]
+        },
+        "id": "wuHelswe_CD1",
+        "outputId": "015ff1b1-cf69-44be-920d-3bf34db65a84"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "Downloading builder script: 0.00B [00:00, ?B/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "176bf0f2fd874582871d660556c99ad3"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "Downloading extra modules:   0%|          | 0.00/1.55k [00:00<?, ?B/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "f41e12b53ffc49aba88240d51a08faae"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "Downloading extra modules: 0.00B [00:00, ?B/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "66d6dc37fc5a4d29b9181c5552f4bfbb"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "\n",
+            "🔍 Manual Evaluation on Validation Samples:\n",
+            "\n",
+            "Question: Which tournament has raffaella reggi listed as the opponent in the final?\n",
+            "Generated SQL: SELECT tournament FROM table_name_55 WHERE opponent_in_the_final = \"raffaella reggi\"\n",
+            "Actual SQL: SELECT tournament FROM table_name_55 WHERE opponent_in_the_final = \"raffaella reggi\"\n",
+            "--------------------------------------------------------------------------------\n",
+            "Question: The match that lasted 2:43 has what record?\n",
+            "Generated SQL: SELECT record FROM table_name_38 WHERE time = \"2:43\"\n",
+            "Actual SQL: SELECT record FROM table_name_38 WHERE time = \"2:43\"\n",
+            "--------------------------------------------------------------------------------\n",
+            "Question: What is the result F_A on 17 December 2002?\n",
+            "Generated SQL: SELECT result_f_a FROM table_name_60 WHERE date = \"17 december 2002\"\n",
+            "Actual SQL: SELECT result_f_a FROM table_name_60 WHERE date = \"17 december 2002\"\n",
+            "--------------------------------------------------------------------------------\n",
+            "Question: Which Goberman has an Obrist of 2%, and a Merkley of 34%?\n",
+            "Generated SQL: SELECT goberman FROM table_name_9 WHERE obrist = \"2%\" AND merkley = \"34%\"\n",
+            "Actual SQL: SELECT goberman FROM table_name_9 WHERE obrist = \"2%\" AND merkley = \"34%\"\n",
+            "--------------------------------------------------------------------------------\n",
+            "Question: What is the displacement for torque of  n·m (lb·ft) @1500 rpm?\n",
+            "Generated SQL: SELECT displacement FROM table_21021796_1 WHERE torque = \"Nm (Lbft) @1500 Rpm\"\n",
+            "Actual SQL: SELECT displacement FROM table_21021796_1 WHERE torque = \"N·m (lb·ft) @1500 rpm\"\n",
+            "--------------------------------------------------------------------------------\n",
+            "\n",
+            "📊 Computing overall evaluation metrics...\n",
+            "\n",
+            "✅ Evaluation Metrics:\n",
+            "Accuracy: 0.4700\n",
+            "F1 Score: 0.8928\n",
+            "BLEU: 0.8564\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "\n",
+        "#  Custom Question Inference\n",
+        "\n",
+        "import torch\n",
+        "\n",
+        "# Detect device\n",
+        "device = torch.device(\"cuda\" if torch.cuda.is_available() else \"cpu\")\n",
+        "model.to(device)\n",
+        "\n",
+        "custom_question = \"List all employees with salary greater than 50000.\"\n",
+        "table_schema = \"CREATE TABLE employee (id INTEGER, name TEXT, salary INTEGER)\"\n",
+        "\n",
+        "# Prepare the input for T5\n",
+        "input_text = f\"translate English to SQL: {custom_question} | {table_schema}\"\n",
+        "\n",
+        "# Tokenize and move to same device as model\n",
+        "inputs = tokenizer(input_text, return_tensors=\"pt\", truncation=True).to(device)\n",
+        "\n",
+        "# Generate SQL query\n",
+        "outputs = model.generate(**inputs, max_length=256)\n",
+        "\n",
+        "# Decode and print\n",
+        "generated_sql = tokenizer.decode(outputs[0], skip_special_tokens=True)\n",
+        "\n",
+        "print(\"🧠 Question:\", custom_question)\n",
+        "print(\"🧩 Generated SQL:\", generated_sql)"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "s3sXp14k_WDi",
+        "outputId": "3f6ec0d2-862d-4742-9caa-de26183062ca"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "🧠 Question: List all employees with salary greater than 50000.\n",
+            "🧩 Generated SQL: SELECT MIN(id) FROM employee\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "!pip install gradio -q\n"
+      ],
+      "metadata": {
+        "id": "Nk1uNMgv_gYX"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "!pip install transformers==4.39.3\n",
+        "!pip install accelerate==0.29.3\n",
+        "!pip install torch==2.1.0\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 1000
+        },
+        "id": "hgAbkQZNxJ0R",
+        "outputId": "792bf116-f724-4a76-df02-814de0594c68"
+      },
+      "execution_count": 12,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Collecting transformers==4.39.3\n",
+            "  Downloading transformers-4.39.3-py3-none-any.whl.metadata (134 kB)\n",
+            "\u001b[?25l     \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m0.0/134.8 kB\u001b[0m \u001b[31m?\u001b[0m eta \u001b[36m-:--:--\u001b[0m\r\u001b[2K     \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m134.8/134.8 kB\u001b[0m \u001b[31m6.9 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[?25hRequirement already satisfied: filelock in /usr/local/lib/python3.12/dist-packages (from transformers==4.39.3) (3.20.0)\n",
+            "Requirement already satisfied: huggingface-hub<1.0,>=0.19.3 in /usr/local/lib/python3.12/dist-packages (from transformers==4.39.3) (0.36.0)\n",
+            "Requirement already satisfied: numpy>=1.17 in /usr/local/lib/python3.12/dist-packages (from transformers==4.39.3) (2.0.2)\n",
+            "Requirement already satisfied: packaging>=20.0 in /usr/local/lib/python3.12/dist-packages (from transformers==4.39.3) (25.0)\n",
+            "Requirement already satisfied: pyyaml>=5.1 in /usr/local/lib/python3.12/dist-packages (from transformers==4.39.3) (6.0.3)\n",
+            "Requirement already satisfied: regex!=2019.12.17 in /usr/local/lib/python3.12/dist-packages (from transformers==4.39.3) (2024.11.6)\n",
+            "Requirement already satisfied: requests in /usr/local/lib/python3.12/dist-packages (from transformers==4.39.3) (2.32.4)\n",
+            "Collecting tokenizers<0.19,>=0.14 (from transformers==4.39.3)\n",
+            "  Downloading tokenizers-0.15.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.7 kB)\n",
+            "Requirement already satisfied: safetensors>=0.4.1 in /usr/local/lib/python3.12/dist-packages (from transformers==4.39.3) (0.6.2)\n",
+            "Requirement already satisfied: tqdm>=4.27 in /usr/local/lib/python3.12/dist-packages (from transformers==4.39.3) (4.67.1)\n",
+            "Requirement already satisfied: fsspec>=2023.5.0 in /usr/local/lib/python3.12/dist-packages (from huggingface-hub<1.0,>=0.19.3->transformers==4.39.3) (2025.3.0)\n",
+            "Requirement already satisfied: typing-extensions>=3.7.4.3 in /usr/local/lib/python3.12/dist-packages (from huggingface-hub<1.0,>=0.19.3->transformers==4.39.3) (4.15.0)\n",
+            "Requirement already satisfied: hf-xet<2.0.0,>=1.1.3 in /usr/local/lib/python3.12/dist-packages (from huggingface-hub<1.0,>=0.19.3->transformers==4.39.3) (1.2.0)\n",
+            "Requirement already satisfied: charset_normalizer<4,>=2 in /usr/local/lib/python3.12/dist-packages (from requests->transformers==4.39.3) (3.4.4)\n",
+            "Requirement already satisfied: idna<4,>=2.5 in /usr/local/lib/python3.12/dist-packages (from requests->transformers==4.39.3) (3.11)\n",
+            "Requirement already satisfied: urllib3<3,>=1.21.1 in /usr/local/lib/python3.12/dist-packages (from requests->transformers==4.39.3) (2.5.0)\n",
+            "Requirement already satisfied: certifi>=2017.4.17 in /usr/local/lib/python3.12/dist-packages (from requests->transformers==4.39.3) (2025.10.5)\n",
+            "Downloading transformers-4.39.3-py3-none-any.whl (8.8 MB)\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m8.8/8.8 MB\u001b[0m \u001b[31m49.7 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[?25hDownloading tokenizers-0.15.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.6 MB)\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m3.6/3.6 MB\u001b[0m \u001b[31m115.8 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[?25hInstalling collected packages: tokenizers, transformers\n",
+            "  Attempting uninstall: tokenizers\n",
+            "    Found existing installation: tokenizers 0.22.1\n",
+            "    Uninstalling tokenizers-0.22.1:\n",
+            "      Successfully uninstalled tokenizers-0.22.1\n",
+            "  Attempting uninstall: transformers\n",
+            "    Found existing installation: transformers 4.57.1\n",
+            "    Uninstalling transformers-4.57.1:\n",
+            "      Successfully uninstalled transformers-4.57.1\n",
+            "\u001b[31mERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.\n",
+            "sentence-transformers 5.1.2 requires transformers<5.0.0,>=4.41.0, but you have transformers 4.39.3 which is incompatible.\u001b[0m\u001b[31m\n",
+            "\u001b[0mSuccessfully installed tokenizers-0.15.2 transformers-4.39.3\n"
+          ]
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "application/vnd.colab-display-data+json": {
+              "pip_warning": {
+                "packages": [
+                  "tokenizers",
+                  "transformers"
+                ]
+              },
+              "id": "ddfd44dd55b147cda66e92487553cb53"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Collecting accelerate==0.29.3\n",
+            "  Downloading accelerate-0.29.3-py3-none-any.whl.metadata (18 kB)\n",
+            "Requirement already satisfied: numpy>=1.17 in /usr/local/lib/python3.12/dist-packages (from accelerate==0.29.3) (2.0.2)\n",
+            "Requirement already satisfied: packaging>=20.0 in /usr/local/lib/python3.12/dist-packages (from accelerate==0.29.3) (25.0)\n",
+            "Requirement already satisfied: psutil in /usr/local/lib/python3.12/dist-packages (from accelerate==0.29.3) (5.9.5)\n",
+            "Requirement already satisfied: pyyaml in /usr/local/lib/python3.12/dist-packages (from accelerate==0.29.3) (6.0.3)\n",
+            "Requirement already satisfied: torch>=1.10.0 in /usr/local/lib/python3.12/dist-packages (from accelerate==0.29.3) (2.8.0+cu126)\n",
+            "Requirement already satisfied: huggingface-hub in /usr/local/lib/python3.12/dist-packages (from accelerate==0.29.3) (0.36.0)\n",
+            "Requirement already satisfied: safetensors>=0.3.1 in /usr/local/lib/python3.12/dist-packages (from accelerate==0.29.3) (0.6.2)\n",
+            "Requirement already satisfied: filelock in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (3.20.0)\n",
+            "Requirement already satisfied: typing-extensions>=4.10.0 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (4.15.0)\n",
+            "Requirement already satisfied: setuptools in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (75.2.0)\n",
+            "Requirement already satisfied: sympy>=1.13.3 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (1.13.3)\n",
+            "Requirement already satisfied: networkx in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (3.5)\n",
+            "Requirement already satisfied: jinja2 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (3.1.6)\n",
+            "Requirement already satisfied: fsspec in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (2025.3.0)\n",
+            "Requirement already satisfied: nvidia-cuda-nvrtc-cu12==12.6.77 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (12.6.77)\n",
+            "Requirement already satisfied: nvidia-cuda-runtime-cu12==12.6.77 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (12.6.77)\n",
+            "Requirement already satisfied: nvidia-cuda-cupti-cu12==12.6.80 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (12.6.80)\n",
+            "Requirement already satisfied: nvidia-cudnn-cu12==9.10.2.21 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (9.10.2.21)\n",
+            "Requirement already satisfied: nvidia-cublas-cu12==12.6.4.1 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (12.6.4.1)\n",
+            "Requirement already satisfied: nvidia-cufft-cu12==11.3.0.4 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (11.3.0.4)\n",
+            "Requirement already satisfied: nvidia-curand-cu12==10.3.7.77 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (10.3.7.77)\n",
+            "Requirement already satisfied: nvidia-cusolver-cu12==11.7.1.2 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (11.7.1.2)\n",
+            "Requirement already satisfied: nvidia-cusparse-cu12==12.5.4.2 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (12.5.4.2)\n",
+            "Requirement already satisfied: nvidia-cusparselt-cu12==0.7.1 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (0.7.1)\n",
+            "Requirement already satisfied: nvidia-nccl-cu12==2.27.3 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (2.27.3)\n",
+            "Requirement already satisfied: nvidia-nvtx-cu12==12.6.77 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (12.6.77)\n",
+            "Requirement already satisfied: nvidia-nvjitlink-cu12==12.6.85 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (12.6.85)\n",
+            "Requirement already satisfied: nvidia-cufile-cu12==1.11.1.6 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (1.11.1.6)\n",
+            "Requirement already satisfied: triton==3.4.0 in /usr/local/lib/python3.12/dist-packages (from torch>=1.10.0->accelerate==0.29.3) (3.4.0)\n",
+            "Requirement already satisfied: requests in /usr/local/lib/python3.12/dist-packages (from huggingface-hub->accelerate==0.29.3) (2.32.4)\n",
+            "Requirement already satisfied: tqdm>=4.42.1 in /usr/local/lib/python3.12/dist-packages (from huggingface-hub->accelerate==0.29.3) (4.67.1)\n",
+            "Requirement already satisfied: hf-xet<2.0.0,>=1.1.3 in /usr/local/lib/python3.12/dist-packages (from huggingface-hub->accelerate==0.29.3) (1.2.0)\n",
+            "Requirement already satisfied: mpmath<1.4,>=1.1.0 in /usr/local/lib/python3.12/dist-packages (from sympy>=1.13.3->torch>=1.10.0->accelerate==0.29.3) (1.3.0)\n",
+            "Requirement already satisfied: MarkupSafe>=2.0 in /usr/local/lib/python3.12/dist-packages (from jinja2->torch>=1.10.0->accelerate==0.29.3) (3.0.3)\n",
+            "Requirement already satisfied: charset_normalizer<4,>=2 in /usr/local/lib/python3.12/dist-packages (from requests->huggingface-hub->accelerate==0.29.3) (3.4.4)\n",
+            "Requirement already satisfied: idna<4,>=2.5 in /usr/local/lib/python3.12/dist-packages (from requests->huggingface-hub->accelerate==0.29.3) (3.11)\n",
+            "Requirement already satisfied: urllib3<3,>=1.21.1 in /usr/local/lib/python3.12/dist-packages (from requests->huggingface-hub->accelerate==0.29.3) (2.5.0)\n",
+            "Requirement already satisfied: certifi>=2017.4.17 in /usr/local/lib/python3.12/dist-packages (from requests->huggingface-hub->accelerate==0.29.3) (2025.10.5)\n",
+            "Downloading accelerate-0.29.3-py3-none-any.whl (297 kB)\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m297.6/297.6 kB\u001b[0m \u001b[31m15.5 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[?25hInstalling collected packages: accelerate\n",
+            "  Attempting uninstall: accelerate\n",
+            "    Found existing installation: accelerate 1.11.0\n",
+            "    Uninstalling accelerate-1.11.0:\n",
+            "      Successfully uninstalled accelerate-1.11.0\n",
+            "Successfully installed accelerate-0.29.3\n"
+          ]
+        },
+        {
+          "output_type": "error",
+          "ename": "KeyboardInterrupt",
+          "evalue": "",
+          "traceback": [
+            "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+            "\u001b[0;31mKeyboardInterrupt\u001b[0m                         Traceback (most recent call last)",
+            "\u001b[0;32m/tmp/ipython-input-2543479286.py\u001b[0m in \u001b[0;36m<cell line: 0>\u001b[0;34m()\u001b[0m\n\u001b[1;32m      1\u001b[0m \u001b[0mget_ipython\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msystem\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m'pip install transformers==4.39.3'\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m----> 2\u001b[0;31m \u001b[0mget_ipython\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msystem\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m'pip install accelerate==0.29.3'\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m      3\u001b[0m \u001b[0mget_ipython\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msystem\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m'pip install torch==2.1.0'\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.12/dist-packages/google/colab/_shell.py\u001b[0m in \u001b[0;36msystem\u001b[0;34m(self, *args, **kwargs)\u001b[0m\n\u001b[1;32m    150\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    151\u001b[0m     \u001b[0;32mif\u001b[0m \u001b[0mpip_warn\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 152\u001b[0;31m       \u001b[0m_pip\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mprint_previous_import_warning\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0moutput\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    153\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    154\u001b[0m   \u001b[0;32mdef\u001b[0m \u001b[0m_send_error\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mexc_content\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.12/dist-packages/google/colab/_pip.py\u001b[0m in \u001b[0;36mprint_previous_import_warning\u001b[0;34m(output)\u001b[0m\n\u001b[1;32m     54\u001b[0m \u001b[0;32mdef\u001b[0m \u001b[0mprint_previous_import_warning\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0moutput\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     55\u001b[0m   \u001b[0;34m\"\"\"Prints a warning about previously imported packages.\"\"\"\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 56\u001b[0;31m   \u001b[0mpackages\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0m_previously_imported_packages\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0moutput\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     57\u001b[0m   \u001b[0;32mif\u001b[0m \u001b[0mpackages\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     58\u001b[0m     \u001b[0;31m# display a list of packages using the colab-display-data mimetype, which\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.12/dist-packages/google/colab/_pip.py\u001b[0m in \u001b[0;36m_previously_imported_packages\u001b[0;34m(pip_output)\u001b[0m\n\u001b[1;32m     48\u001b[0m \u001b[0;32mdef\u001b[0m \u001b[0m_previously_imported_packages\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mpip_output\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     49\u001b[0m   \u001b[0;34m\"\"\"List all previously imported packages from a pip install.\"\"\"\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 50\u001b[0;31m   \u001b[0minstalled\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mset\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0m_extract_toplevel_packages\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mpip_output\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     51\u001b[0m   \u001b[0;32mreturn\u001b[0m \u001b[0msorted\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0minstalled\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mintersection\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mset\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0msys\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mmodules\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     52\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.12/dist-packages/google/colab/_pip.py\u001b[0m in \u001b[0;36m_extract_toplevel_packages\u001b[0;34m(pip_output)\u001b[0m\n\u001b[1;32m     37\u001b[0m   \u001b[0;34m\"\"\"Extract the list of toplevel packages associated with a pip install.\"\"\"\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     38\u001b[0m   \u001b[0mtoplevel\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mcollections\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mdefaultdict\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mset\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 39\u001b[0;31m   \u001b[0;32mfor\u001b[0m \u001b[0mm\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mps\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mimportlib\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mmetadata\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mpackages_distributions\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mitems\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     40\u001b[0m     \u001b[0;32mfor\u001b[0m \u001b[0mp\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mps\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     41\u001b[0m       \u001b[0mtoplevel\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0mp\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0madd\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mm\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/lib/python3.12/importlib/metadata/__init__.py\u001b[0m in \u001b[0;36mpackages_distributions\u001b[0;34m()\u001b[0m\n\u001b[1;32m    945\u001b[0m     \u001b[0mpkg_to_dist\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mcollections\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mdefaultdict\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mlist\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    946\u001b[0m     \u001b[0;32mfor\u001b[0m \u001b[0mdist\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mdistributions\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 947\u001b[0;31m         \u001b[0;32mfor\u001b[0m \u001b[0mpkg\u001b[0m \u001b[0;32min\u001b[0m \u001b[0m_top_level_declared\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mdist\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0;32mor\u001b[0m \u001b[0m_top_level_inferred\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mdist\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    948\u001b[0m             \u001b[0mpkg_to_dist\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0mpkg\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mappend\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mdist\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mmetadata\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;34m'Name'\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    949\u001b[0m     \u001b[0;32mreturn\u001b[0m \u001b[0mdict\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mpkg_to_dist\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/lib/python3.12/importlib/metadata/__init__.py\u001b[0m in \u001b[0;36m_top_level_inferred\u001b[0;34m(dist)\u001b[0m\n\u001b[1;32m    957\u001b[0m     opt_names = {\n\u001b[1;32m    958\u001b[0m         \u001b[0mf\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mparts\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;36m0\u001b[0m\u001b[0;34m]\u001b[0m \u001b[0;32mif\u001b[0m \u001b[0mlen\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mf\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mparts\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0;34m>\u001b[0m \u001b[0;36m1\u001b[0m \u001b[0;32melse\u001b[0m \u001b[0minspect\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mgetmodulename\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mf\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 959\u001b[0;31m         \u001b[0;32mfor\u001b[0m \u001b[0mf\u001b[0m \u001b[0;32min\u001b[0m \u001b[0malways_iterable\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mdist\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mfiles\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    960\u001b[0m     }\n\u001b[1;32m    961\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/lib/python3.12/importlib/metadata/__init__.py\u001b[0m in \u001b[0;36mfiles\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    498\u001b[0m             \u001b[0;32mreturn\u001b[0m \u001b[0mlist\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mfilter\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;32mlambda\u001b[0m \u001b[0mpath\u001b[0m\u001b[0;34m:\u001b[0m \u001b[0mpath\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mlocate\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mexists\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mpackage_paths\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    499\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 500\u001b[0;31m         return skip_missing_files(\n\u001b[0m\u001b[1;32m    501\u001b[0m             make_files(\n\u001b[1;32m    502\u001b[0m                 \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_read_files_distinfo\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/lib/python3.12/importlib/metadata/_functools.py\u001b[0m in \u001b[0;36mwrapper\u001b[0;34m(param, *args, **kwargs)\u001b[0m\n\u001b[1;32m    100\u001b[0m     \u001b[0;32mdef\u001b[0m \u001b[0mwrapper\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mparam\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m*\u001b[0m\u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    101\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0mparam\u001b[0m \u001b[0;32mis\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0;32mNone\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 102\u001b[0;31m             \u001b[0;32mreturn\u001b[0m \u001b[0mfunc\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mparam\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m*\u001b[0m\u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    103\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    104\u001b[0m     \u001b[0;32mreturn\u001b[0m \u001b[0mwrapper\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/lib/python3.12/importlib/metadata/__init__.py\u001b[0m in \u001b[0;36mskip_missing_files\u001b[0;34m(package_paths)\u001b[0m\n\u001b[1;32m    496\u001b[0m         \u001b[0;34m@\u001b[0m\u001b[0mpass_none\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    497\u001b[0m         \u001b[0;32mdef\u001b[0m \u001b[0mskip_missing_files\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mpackage_paths\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 498\u001b[0;31m             \u001b[0;32mreturn\u001b[0m \u001b[0mlist\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mfilter\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;32mlambda\u001b[0m \u001b[0mpath\u001b[0m\u001b[0;34m:\u001b[0m \u001b[0mpath\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mlocate\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mexists\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mpackage_paths\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    499\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    500\u001b[0m         return skip_missing_files(\n",
+            "\u001b[0;32m/usr/lib/python3.12/importlib/metadata/__init__.py\u001b[0m in \u001b[0;36m<lambda>\u001b[0;34m(path)\u001b[0m\n\u001b[1;32m    496\u001b[0m         \u001b[0;34m@\u001b[0m\u001b[0mpass_none\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    497\u001b[0m         \u001b[0;32mdef\u001b[0m \u001b[0mskip_missing_files\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mpackage_paths\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 498\u001b[0;31m             \u001b[0;32mreturn\u001b[0m \u001b[0mlist\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mfilter\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;32mlambda\u001b[0m \u001b[0mpath\u001b[0m\u001b[0;34m:\u001b[0m \u001b[0mpath\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mlocate\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mexists\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mpackage_paths\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    499\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    500\u001b[0m         return skip_missing_files(\n",
+            "\u001b[0;32m/usr/lib/python3.12/pathlib.py\u001b[0m in \u001b[0;36mexists\u001b[0;34m(self, follow_symlinks)\u001b[0m\n\u001b[1;32m    858\u001b[0m         \"\"\"\n\u001b[1;32m    859\u001b[0m         \u001b[0;32mtry\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 860\u001b[0;31m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mstat\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mfollow_symlinks\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0mfollow_symlinks\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    861\u001b[0m         \u001b[0;32mexcept\u001b[0m \u001b[0mOSError\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0me\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    862\u001b[0m             \u001b[0;32mif\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0m_ignore_error\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0me\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/lib/python3.12/pathlib.py\u001b[0m in \u001b[0;36mstat\u001b[0;34m(self, follow_symlinks)\u001b[0m\n\u001b[1;32m    838\u001b[0m         \u001b[0mos\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mstat\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0mdoes\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    839\u001b[0m         \"\"\"\n\u001b[0;32m--> 840\u001b[0;31m         \u001b[0;32mreturn\u001b[0m \u001b[0mos\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mstat\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mfollow_symlinks\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0mfollow_symlinks\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    841\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    842\u001b[0m     \u001b[0;32mdef\u001b[0m \u001b[0mlstat\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;31mKeyboardInterrupt\u001b[0m: "
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from transformers import T5Tokenizer, T5ForConditionalGeneration\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 86,
+          "referenced_widgets": [
+            "df50e567944744d58d2a590af44aaa60",
+            "6e81199bf2a14dd683e184e5ae394243",
+            "fbce196a27bb4bb094c25ba0d937d00f",
+            "37d6e420fcf04b62981e8d0a66559314",
+            "3d5905dc287b44dd92a50e8d3a9846db",
+            "dcf115509518402d8e1307edab0f628f",
+            "cf29c771b1a240f6a3eaa02a6f146ef9",
+            "0b3503a1975f4f5ba350ff14918bf760",
+            "473449300e2d49058dd05b0ae1ee2111",
+            "6efe9d45fa284350aa85b66c168cca52",
+            "4672eecf09914dc98cad727ac1bedd56"
+          ]
+        },
+        "id": "iPv7gYyLxLcy",
+        "outputId": "aa83bd5e-0c04-40e5-ff9f-12f04a5ae498"
+      },
+      "execution_count": 1,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "The cache for model files in Transformers v4.22.0 has been updated. Migrating your old cache. This is a one-time only operation. You can interrupt this and resume the migration later on by calling `transformers.utils.move_cache()`.\n"
+          ]
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "0it [00:00, ?it/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "df50e567944744d58d2a590af44aaa60"
+            }
+          },
+          "metadata": {}
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "\n",
+        "import gradio as gr\n",
+        "import torch\n",
+        "\n",
+        "# Load fine-tuned model\n",
+        "model_dir = \"/content/drive/MyDrive/t5_text2sql_model\"\n",
+        "tokenizer = T5Tokenizer.from_pretrained(model_dir)\n",
+        "model = T5ForConditionalGeneration.from_pretrained(model_dir)\n",
+        "device = \"cuda\" if torch.cuda.is_available() else \"cpu\"\n",
+        "model.to(device)\n",
+        "\n",
+        "# Define prediction function\n",
+        "def text_to_sql(question, table_schema):\n",
+        "    input_text = f\"translate English to SQL: {question} | {table_schema}\"\n",
+        "    inputs = tokenizer(input_text, return_tensors=\"pt\", truncation=True, padding=True).to(device)\n",
+        "    output = model.generate(**inputs, max_length=128)\n",
+        "    return tokenizer.decode(output[0], skip_special_tokens=True)\n",
+        "\n",
+        "# Create Gradio Interface\n",
+        "interface = gr.Interface(\n",
+        "    fn=text_to_sql,\n",
+        "    inputs=[\n",
+        "        gr.Textbox(label=\"Natural Language Question\"),\n",
+        "        gr.Textbox(label=\"Table Schema (e.g., CREATE TABLE ...)\")\n",
+        "    ],\n",
+        "    outputs=\"text\",\n",
+        "    title=\"🧠 Text-to-SQL Generator (T5 Model)\",\n",
+        "    description=\"Enter a natural language question and table schema to generate the SQL query.\"\n",
+        ")\n",
+        "\n",
+        "# Launch the interface\n",
+        "interface.launch(share=True)"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 628
+        },
+        "id": "5JpvU0Jp_j32",
+        "outputId": "74f4f426-4a9c-4681-ba3b-f3ffd28d1caf"
+      },
+      "execution_count": 2,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "Special tokens have been added in the vocabulary, make sure the associated word embeddings are fine-tuned or trained.\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Colab notebook detected. To show errors in colab notebook, set debug=True in launch()\n",
+            "* Running on public URL: https://884607bab7785192e9.gradio.live\n",
+            "\n",
+            "This share link expires in 1 week. For free permanent hosting and GPU upgrades, run `gradio deploy` from the terminal in the working directory to deploy to Hugging Face Spaces (https://huggingface.co/spaces)\n"
+          ]
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<IPython.core.display.HTML object>"
+            ],
+            "text/html": [
+              "<div><iframe src=\"https://884607bab7785192e9.gradio.live\" width=\"100%\" height=\"500\" allow=\"autoplay; camera; microphone; clipboard-read; clipboard-write;\" frameborder=\"0\" allowfullscreen></iframe></div>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": []
+          },
+          "metadata": {},
+          "execution_count": 2
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [],
+      "metadata": {
+        "id": "1QfUAu4G_o5z"
+      },
+      "execution_count": null,
+      "outputs": []
+    }
+  ]
+}
